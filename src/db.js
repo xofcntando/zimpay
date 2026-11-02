@@ -10,7 +10,7 @@ async function init(uri = cfg.mongoUri, dbName = cfg.dbName) {
   await client.connect();
   const db = client.db(dbName);
   const existing = new Set((await db.listCollections({}, { nameOnly: true }).toArray()).map((c) => c.name));
-  for (const n of ['users', 'accounts', 'transactions', 'entries', 'audit_log']) {
+  for (const n of ['users', 'accounts', 'transactions', 'entries', 'audit_log', 'sms_inbox']) {
     if (!existing.has(n)) await db.createCollection(n).catch((e) => { if (e.code !== 48) throw e; });
     cols[n] = db.collection(n);
   }
@@ -22,6 +22,8 @@ async function init(uri = cfg.mongoUri, dbName = cfg.dbName) {
     { unique: true, partialFilterExpression: { provider: 'manual', type: 'cashin', provider_ref: { $type: 'string' } } });
   await cols.transactions.createIndex({ initiator_id: 1, created_at: -1 });
   await cols.transactions.createIndex({ counterparty_id: 1, created_at: -1 });
+  await cols.sms_inbox.createIndex({ hash: 1 }, { unique: true });
+  await cols.sms_inbox.createIndex({ received_at: 1 }, { expireAfterSeconds: 14 * 24 * 3600 });
   await cols.entries.createIndex({ transaction_id: 1 });
   await cols.entries.createIndex({ account_id: 1 });
   // system accounts: deterministic ids, money held at bank/provider (goes negative), fees, payout hold

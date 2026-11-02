@@ -24,6 +24,9 @@ module.exports = {
     none:     { USD: { single: 5000,    daily: 10000 },   ZWG: { single: 130000,   daily: 260000 } },
     verified: { USD: { single: 200000,  daily: 500000 },  ZWG: { single: 5200000,  daily: 13000000 } },
   },
+  smsSecret: env.SMS_WEBHOOK_SECRET || '',
+  // top-ups above these amounts (minor units) are never auto-confirmed from SMS; an admin must approve
+  autoConfirmMax: { USD: Math.round(Number(env.AUTO_CONFIRM_MAX_USD ?? 50) * 100), ZWG: Math.round(Number(env.AUTO_CONFIRM_MAX_ZWG ?? 1300) * 100) },
   merchantEcocash: env.MERCHANT_ECOCASH_NUMBER || '',
   merchantName: env.MERCHANT_ECOCASH_NAME || '',
   paynow: { id: env.PAYNOW_ID, key: env.PAYNOW_KEY, authEmail: env.PAYNOW_AUTH_EMAIL },

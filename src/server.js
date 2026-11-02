@@ -56,6 +56,7 @@ function createApp() {
     } catch (e) { next(e); }
   });
 
+  app.use(require('./routes/sms'));
   app.use(require('./routes/auth'));
   app.use(require('./routes/wallet'));
   app.use('/admin', require('./routes/admin'));

@@ -134,3 +134,45 @@ test('manual EcoCash top-up: reference is single-use, admin approval credits onc
   await admin.req('POST', '/admin/topup/' + tx2.id, { _csrf: t2, decision: 'approve' });
   assert.equal((await L.balances(id)).USD, before + 2600);
 });
+
+test('SMS auto-confirm: matches ref+amount+currency, either order, once, respects cap', async () => {
+  const cfg = require('../src/config'); cfg.smsSecret = 'sek';
+  const sms = require('../src/sms');
+  const id = await uid('+263771000002'); const before = (await L.balances(id)).USD;
+  const mk = (ref, amount) => L.createCashIn({ userId: id, currency: 'USD', amount, msisdn: '+263771000002', provider: 'manual', providerRef: ref });
+  const text = (ref, amt) => `Confirmed. You have received USD ${amt} from 0771000002 - TEST. Ref: ${ref}. New balance USD 99.00`;
+
+  // SMS first, then customer submits
+  assert.deepEqual(await sms.onSms({ body: text('MP777.AAA.B1', '12.00'), sender: 'EcoCash' }), { stored: true });
+  const t1 = await mk('MP777.AAA.B1', 1200);
+  assert.equal(await sms.onTopupSubmitted(t1.id), true);
+  assert.equal((await L.balances(id)).USD, before + 1200);
+
+  // customer first, SMS second
+  const t2 = await mk('MP888.CCC.D2', 500);
+  const r = await sms.onSms({ body: text('MP888.CCC.D2', '5.00'), sender: 'EcoCash' });
+  assert.equal(r.confirmed, t2.id);
+  assert.equal((await L.balances(id)).USD, before + 1700);
+
+  // replayed SMS does nothing
+  assert.equal((await sms.onSms({ body: text('MP888.CCC.D2', '5.00'), sender: 'EcoCash' })).duplicate, true);
+  // wrong amount, wrong currency, wrong sender, over cap: all stay pending
+  const t3 = await mk('MP999.EEE.F3', 1000);
+  await sms.onSms({ body: text('MP999.EEE.F3', '9.00'), sender: 'EcoCash' });
+  await sms.onSms({ body: text('MP999.EEE.F3', '10.00').replaceAll('USD', 'ZWG'), sender: 'EcoCash' });
+  assert.equal((await sms.onSms({ body: text('MP999.EEE.F3', '10.00'), sender: 'Scammer' })).ignored, 'sender');
+  const t4 = await mk('MP555.GGG.H4', 600000);
+  await sms.onSms({ body: text('MP555.GGG.H4', '6000.00'), sender: 'EcoCash' });
+  assert.equal((await L.balances(id)).USD, before + 1700);
+  assert.equal((await db.cols.transactions.findOne({ _id: db.oid(t3.id) })).status, 'pending');
+  assert.equal((await db.cols.transactions.findOne({ _id: db.oid(t4.id) })).status, 'pending');
+  assert.equal((await L.reconcile()).ok, true);
+
+  // HTTP webhook auth
+  const bad = await fetch(base + '/webhooks/sms?key=nope', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"message":"x"}' });
+  assert.equal(bad.status, 401);
+  const good = await fetch(base + '/webhooks/sms?key=sek', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message: text('MP999.EEE.F3', '10.00'), from: 'EcoCash' }) });
+  assert.equal((await good.json()).confirmed, t3.id);
+  assert.equal((await L.balances(id)).USD, before + 2700);
+  cfg.smsSecret = '';
+});

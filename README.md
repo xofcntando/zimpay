@@ -23,6 +23,9 @@ The app refuses to start with a live provider unless `LICENSED_PARTNER_CONFIRMED
 ## Payment modes
 - `mock` (default): sandbox, instant fake payments.
 - `manual`: customers send EcoCash to `MERCHANT_ECOCASH_NUMBER` and submit the reference; an admin confirms in `/admin`. No third-party API. Each reference can be used once. Withdrawals are also paid by hand.
+- `manual` + `SMS_WEBHOOK_SECRET`: automatic confirmation. Install an SMS-forwarder app on the phone with your EcoCash number and point it at
+  `https://YOUR-SITE/webhooks/sms?key=SMS_WEBHOOK_SECRET`. A top-up is credited when the SMS contains the customer's reference, the exact amount and the
+  currency (sender must be "EcoCash"; each SMS works once; amounts above `AUTO_CONFIRM_MAX_*` still need an admin). Risk: SMS sender names can be spoofed, so keep the cap low.
 - `paynow`: EcoCash push prompt via Paynow (cash-in only; test it in Paynow test mode first).
 The two live modes require `LICENSED_PARTNER_CONFIRMED=yes`.
 

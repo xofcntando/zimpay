@@ -2,6 +2,7 @@ const router = require('express').Router();
 const cfg = require('../config');
 const provider = require('../providers');
 const L = require('../ledger');
+const smsAuto = require('../sms');
 const { cols, oid, isOid } = require('../db');
 const { UserError, parseAmount, normPhone } = require('../money');
 const { wrap, requireLogin, flash } = require('./util');
@@ -44,7 +45,10 @@ router.post('/topup', requireLogin, wrap(async (req, res) => {
     if (e.code === 11000) throw new UserError('That EcoCash reference was already submitted.');
     throw e;
   }
-  if (provider.name === 'manual') flash(req, 'ok', 'Received. Your balance updates once we confirm the EcoCash payment.');
+  if (provider.name === 'manual') {
+    const auto = tx.status === 'pending' && cfg.smsSecret && (await smsAuto.onTopupSubmitted(tx.id));
+    flash(req, 'ok', auto ? 'Payment confirmed. Your balance is updated.' : 'Received. Your balance updates once we confirm the EcoCash payment.');
+  }
   if (tx.status === 'pending' && !tx.provider_ref) {
     const r = await provider.initiateCashIn({ tx, user: req.user });
     if (r.status === 'failed') { await L.failTx(tx.id); throw new UserError(r.error || 'Payment could not be started'); }
