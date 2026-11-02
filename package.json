@@ -22,5 +22,7 @@
   },
   "devDependencies": {
     "mongodb-memory-server": "^11.3.0"
-  }
+  },
+  "license": "SEE LICENSE IN LICENSE",
+  "author": "Ntandomods"
 }

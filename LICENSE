@@ -1,0 +1,61 @@
+Ntandomods Source-Available License (NSAL) v1.0
+
+Copyright (c) 2026 Ntandomods. All rights reserved.
+
+This license applies to the ZimPay software and all accompanying files in this
+repository (the "Software"). By copying, running or modifying the Software you
+agree to these terms.
+
+1. WHAT YOU MAY DO
+   a. View and read the source code.
+   b. Run the Software on your own machine for personal learning, evaluation
+      and testing, in sandbox mode only.
+   c. Make private modifications for the purposes in (b).
+
+2. WHAT YOU MAY NOT DO without prior written permission from Ntandomods
+   a. Use the Software, or anything derived from it, in production, or to
+      handle, hold, transmit or process real money or real customer funds.
+   b. Use it in any commercial product or service, or offer it as a hosted
+      service to others.
+   c. Copy, publish, sublicense, sell, rent or redistribute the Software or
+      any substantial part of it, in source or compiled form.
+   d. Remove or alter this license or any copyright notice.
+   e. Use the name "Ntandomods" or "ZimPay" to endorse or promote a
+      derivative work.
+
+3. NO FINANCIAL LICENCE
+   This is a software copyright license only. It is NOT a payment, money
+   transfer, banking or any other regulatory licence or authorisation. Nothing
+   here permits anyone to operate a money transfer or payment service in
+   Zimbabwe or elsewhere. Any person operating the Software with real funds is
+   solely responsible for obtaining every regulatory licence, partner
+   agreement and approval the law requires (including from the Reserve Bank
+   of Zimbabwe, where applicable).
+
+4. OWNERSHIP
+   Ntandomods retains all right, title and interest in the Software. No rights
+   are granted except those expressly stated above. Contributions you submit
+   to the repository may be used by Ntandomods under these terms.
+
+5. THIRD-PARTY COMPONENTS
+   The Software depends on open-source packages (see package.json), each under
+   its own license. This license does not change those licenses.
+
+6. DISCLAIMER OF WARRANTY
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO MERCHANTABILITY, FITNESS FOR A
+   PARTICULAR PURPOSE, NON-INFRINGEMENT AND SECURITY. THE SOFTWARE HAS NOT
+   BEEN INDEPENDENTLY SECURITY-REVIEWED AND MUST NOT BE USED WITH REAL FUNDS.
+
+7. LIMITATION OF LIABILITY
+   TO THE MAXIMUM EXTENT PERMITTED BY LAW, NTANDOMODS SHALL NOT BE LIABLE FOR
+   ANY CLAIM, DAMAGES, LOSS OF FUNDS OR OTHER LIABILITY ARISING FROM OR IN
+   CONNECTION WITH THE SOFTWARE OR ITS USE.
+
+8. TERMINATION
+   This license ends automatically if you breach it. On termination you must
+   stop using the Software and delete all copies.
+
+9. PERMISSIONS
+   For commercial or production licensing, contact Ntandomods through
+   https://github.com/xofcntando.
