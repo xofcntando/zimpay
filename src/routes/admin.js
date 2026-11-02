@@ -1,31 +1,29 @@
 const router = require('express').Router();
 const L = require('../ledger');
-const { pool } = require('../db');
+const { cols, oid, isOid } = require('../db');
 const { wrap, requireLogin, requireAdmin, flash } = require('./util');
 
 router.use(requireLogin, requireAdmin);
 
 router.get('/', wrap(async (req, res) => {
-  const kyc = (await pool.query(`SELECT id,name,phone,national_id,created_at FROM users WHERE kyc_status='pending' ORDER BY created_at`)).rows;
-  const payouts = (await pool.query(
-    `SELECT t.*, u.name, u.phone FROM transactions t JOIN users u ON u.id=t.initiator_id
-     WHERE t.type='cashout' AND t.status='pending' ORDER BY t.created_at`)).rows;
-  const recent = (await pool.query(
-    `SELECT t.*, u.phone FROM transactions t JOIN users u ON u.id=t.initiator_id ORDER BY t.created_at DESC LIMIT 30`)).rows;
-  const books = (await pool.query(`SELECT kind, currency, SUM(balance)::bigint AS balance FROM accounts GROUP BY 1,2 ORDER BY 1,2`)).rows;
-  res.render('admin', { kyc, payouts, recent, books, rec: await L.reconcile() });
+  const kyc = (await cols.users.find({ kyc_status: 'pending' }).sort({ created_at: 1 }).toArray()).map((u) => ({ ...u, id: String(u._id) }));
+  const payouts = await L.listAdmin({ type: 'cashout', status: 'pending' }, 100);
+  const recent = await L.listAdmin({}, 30);
+  res.render('admin', { kyc, payouts, recent, books: await L.books(), rec: await L.reconcile() });
 }));
 
-const audit = (req, action, detail) => pool.query('INSERT INTO audit_log(actor_id,action,detail) VALUES ($1,$2,$3)', [req.user.id, action, detail]);
+const audit = (req, action, detail) => cols.audit_log.insertOne({ actor_id: oid(req.user.id), action, detail, created_at: new Date() });
 
 router.post('/kyc/:id', wrap(async (req, res) => {
+  if (!isOid(req.params.id)) return res.redirect('/admin');
   const status = req.body.decision === 'approve' ? 'verified' : 'rejected';
-  await pool.query(`UPDATE users SET kyc_status=$2 WHERE id=$1 AND kyc_status='pending'`, [Number(req.params.id), status]);
+  await cols.users.updateOne({ _id: oid(req.params.id), kyc_status: 'pending' }, { $set: { kyc_status: status } });
   await audit(req, 'kyc_' + status, 'user ' + req.params.id);
   res.redirect('/admin');
 }));
 
 router.post('/payout/:id', wrap(async (req, res) => {
+  if (!isOid(req.params.id)) return res.redirect('/admin');
   if (req.body.decision === 'approve') await L.completeCashOut(req.params.id, String(req.body.ref || '').slice(0, 80) || null);
   else await L.rejectCashOut(req.params.id);
   await audit(req, 'payout_' + req.body.decision, 'tx ' + req.params.id);

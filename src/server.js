@@ -1,12 +1,12 @@
 const express = require('express');
 const helmet = require('helmet');
 const session = require('express-session');
-const PgStore = require('connect-pg-simple')(session);
+const { MongoStore } = require('connect-mongo');
 const rateLimit = require('express-rate-limit');
 const crypto = require('crypto');
 const path = require('path');
 const cfg = require('./config');
-const { pool, migrate } = require('./db');
+const db = require('./db');
 const { UserError, fmt } = require('./money');
 
 function createApp() {
@@ -19,11 +19,11 @@ function createApp() {
   app.use(express.static(path.join(__dirname, 'public'), { maxAge: '1h' }));
 
   app.get('/healthz', async (req, res) => {
-    try { await pool.query('SELECT 1'); res.send('ok'); } catch { res.status(500).send('db down'); }
+    try { await db.cols.users.estimatedDocumentCount(); res.send('ok'); } catch { res.status(500).send('db down'); }
   });
 
   app.use(session({
-    store: new PgStore({ pool, createTableIfMissing: true }),
+    store: MongoStore.create({ client: db.getClient(), dbName: cfg.dbName, collectionName: 'sessions', ttl: 8 * 3600 }),
     secret: cfg.sessionSecret, name: 'zp.sid', resave: false, saveUninitialized: false,
     cookie: { httpOnly: true, sameSite: 'lax', secure: cfg.isProd, maxAge: 1000 * 60 * 60 * 8 },
   }));
@@ -46,12 +46,14 @@ function createApp() {
   });
 
   app.use(async (req, res, next) => {
-    if (req.session.userId) {
-      const r = await pool.query('SELECT id,phone,name,role,kyc_status FROM users WHERE id=$1', [req.session.userId]);
-      req.user = r.rows[0] || null;
-      res.locals.user = req.user;
-    }
-    next();
+    try {
+      if (req.session.userId && db.isOid(req.session.userId)) {
+        const u = await db.cols.users.findOne({ _id: db.oid(req.session.userId) }, { projection: { password_hash: 0 } });
+        req.user = u ? { ...u, id: String(u._id) } : null;
+        res.locals.user = req.user;
+      }
+      next();
+    } catch (e) { next(e); }
   });
 
   app.use(require('./routes/auth'));
@@ -71,7 +73,7 @@ function createApp() {
 }
 
 async function main() {
-  await migrate();
+  await db.init();
   const port = process.env.PORT || 3000;
   createApp().listen(port, () => console.log(`${cfg.appName} listening on ${port} (provider=${cfg.provider})`));
 }

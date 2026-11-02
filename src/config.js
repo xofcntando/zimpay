@@ -15,7 +15,8 @@ module.exports = {
   baseUrl: env.BASE_URL || 'http://localhost:3000',
   adminPhone: env.ADMIN_PHONE || '',
   sessionSecret: env.SESSION_SECRET || 'dev-only-secret-change-me',
-  databaseUrl: env.DATABASE_URL,
+  mongoUri: env.MONGODB_URI,
+  dbName: env.MONGODB_DB || 'zimpay',
   currencies: ['USD', 'ZWG'],
   feeBps: { transfer: Number(env.FEE_TRANSFER_BPS ?? 0), cashout: Number(env.FEE_CASHOUT_BPS ?? 100) },
   // limits in minor units (cents) per currency, by KYC level

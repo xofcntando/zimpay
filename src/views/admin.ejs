@@ -11,7 +11,7 @@
 
 <h3>Pending withdrawals (<%= payouts.length %>)</h3>
 <ul class="txs">
-<% payouts.forEach(t => { %><li><div class="admrow"><span><%= fmt(t.amount,t.currency) %> to <%= t.msisdn %><small><%= t.name %> <%= t.phone %></small></span>
+<% payouts.forEach(t => { %><li><div class="admrow"><span><%= fmt(t.amount,t.currency) %> to <%= t.msisdn %><small><%= t.init_name %> <%= t.init_phone %></small></span>
   <form method="post" action="/admin/payout/<%= t.id %>" class="inline"><input type="hidden" name="_csrf" value="<%= csrf %>">
   <input name="ref" placeholder="payout ref" class="sm"> <button class="btn sm" name="decision" value="approve">Paid</button> <button class="btn sm alt" name="decision" value="reject">Reject</button></form></div></li><% }) %>
 </ul>
@@ -22,5 +22,5 @@
 
 <h3>Recent transactions</h3>
 <table><tr><th>When</th><th>Type</th><th>User</th><th>Amount</th><th>Status</th></tr>
-<% recent.forEach(t => { %><tr><td><%= new Date(t.created_at).toLocaleString('en-ZW') %></td><td><%= t.type %></td><td><%= t.phone %></td><td><%= fmt(t.amount,t.currency) %></td><td><%= t.status %></td></tr><% }) %></table>
+<% recent.forEach(t => { %><tr><td><%= new Date(t.created_at).toLocaleString('en-ZW') %></td><td><%= t.type %></td><td><%= t.init_phone %></td><td><%= fmt(t.amount,t.currency) %></td><td><%= t.status %></td></tr><% }) %></table>
 <%- include('_foot') %>

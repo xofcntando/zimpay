@@ -2,7 +2,7 @@ const router = require('express').Router();
 const bcrypt = require('bcryptjs');
 const rateLimit = require('express-rate-limit');
 const cfg = require('../config');
-const { pool, withTx } = require('../db');
+const { cols, withTx } = require('../db');
 const { UserError, normPhone } = require('../money');
 const { ensureUserAccounts } = require('../ledger');
 const { wrap, flash } = require('./util');
@@ -22,28 +22,28 @@ router.post('/register', authLimiter, wrap(async (req, res) => {
   const hash = await bcrypt.hash(password, 11);
   const role = cfg.adminPhone && normPhone(cfg.adminPhone) === phone ? 'admin' : 'user';
   try {
-    const id = await withTx(async (c) => {
-      const r = await c.query('INSERT INTO users(phone,name,password_hash,role) VALUES ($1,$2,$3,$4) RETURNING id', [phone, name, hash, role]);
-      await ensureUserAccounts(c, r.rows[0].id);
-      return r.rows[0].id;
+    const id = await withTx(async (s) => {
+      const r = await cols.users.insertOne({ phone, name, password_hash: hash, role, kyc_status: 'none', national_id: null, created_at: new Date() }, { session: s });
+      await ensureUserAccounts(s, r.insertedId);
+      return String(r.insertedId);
     });
     await new Promise((ok) => req.session.regenerate(ok));
     req.session.userId = id;
     res.redirect('/dashboard');
   } catch (e) {
-    if (e.code === '23505') throw new UserError('That number is already registered. Log in instead.');
+    if (e.code === 11000) throw new UserError('That number is already registered. Log in instead.');
     throw e;
   }
 }));
 
 router.post('/login', authLimiter, wrap(async (req, res) => {
   const phone = normPhone(req.body.phone);
-  const u = (await pool.query('SELECT * FROM users WHERE phone=$1', [phone])).rows[0];
+  const u = await cols.users.findOne({ phone });
   // compare against a dummy hash when user missing to keep timing similar
   const ok = await bcrypt.compare(String(req.body.password || ''), u ? u.password_hash : '$2a$11$invalidinvalidinvalidinvalidinvalidinvalidinvalidinvali');
   if (!u || !ok) throw new UserError('Wrong number or password');
   await new Promise((r) => req.session.regenerate(r));
-  req.session.userId = u.id;
+  req.session.userId = String(u._id);
   res.redirect('/dashboard');
 }));
 

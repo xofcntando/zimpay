@@ -1,207 +1,220 @@
-const { withTx } = require('./db');
+const { cols, withTx, oid } = require('./db');
 const cfg = require('./config');
 const { UserError, feeFor } = require('./money');
 
-async function ensureUserAccounts(client, userId) {
-  for (const c of cfg.currencies) {
-    await client.query(
-      'INSERT INTO accounts(user_id,kind,currency) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING', [userId, 'user', c]);
+const uAcct = (userId, cur) => `u:${userId}:${cur}`;
+const sAcct = (kind, cur) => `sys:${kind}:${cur}`;
+const now = () => new Date();
+
+function shapeTx(d) {
+  if (!d) return d;
+  return { ...d, id: String(d._id), initiator_id: String(d.initiator_id),
+    counterparty_id: d.counterparty_id ? String(d.counterparty_id) : null };
+}
+
+async function ensureUserAccounts(session, userId) {
+  for (const currency of cfg.currencies) {
+    await cols.accounts.updateOne({ _id: uAcct(userId, currency) },
+      { $setOnInsert: { user_id: oid(userId), kind: 'user', currency, balance: 0 } }, { upsert: true, session });
   }
 }
 
-async function acct(client, userId, currency) {
-  const r = await client.query('SELECT id FROM accounts WHERE user_id=$1 AND currency=$2', [userId, currency]);
-  if (!r.rows[0]) throw new Error('wallet missing');
-  return r.rows[0].id;
-}
-async function sysAcct(client, kind, currency) {
-  const r = await client.query('SELECT id FROM accounts WHERE user_id IS NULL AND kind=$1 AND currency=$2', [kind, currency]);
-  return r.rows[0].id;
-}
-
-// Applies legs (must sum to zero) atomically. Locks accounts in id order to avoid deadlocks.
-async function applyLegs(client, txId, legs) {
-  const sum = legs.reduce((a, l) => a + l.amount, 0);
-  if (sum !== 0) throw new Error('unbalanced transaction');
+// Applies legs (must sum to zero) atomically inside the caller's transaction.
+// A debit on a user wallet only matches if balance >= amount, so wallets can never go negative.
+async function applyLegs(s, txId, legs) {
+  if (legs.reduce((a, l) => a + l.amount, 0) !== 0) throw new Error('unbalanced transaction');
   const merged = new Map();
   for (const l of legs) merged.set(l.accountId, (merged.get(l.accountId) || 0) + l.amount);
-  const ids = [...merged.keys()].sort((a, b) => a - b);
-  await client.query('SELECT id FROM accounts WHERE id = ANY($1) ORDER BY id FOR UPDATE', [ids]);
-  for (const id of ids) {
-    try {
-      await client.query('UPDATE accounts SET balance = balance + $1 WHERE id=$2', [merged.get(id), id]);
-    } catch (e) {
-      if (e.code === '23514') throw new UserError('Insufficient funds');
-      throw e;
-    }
-    await client.query('INSERT INTO entries(transaction_id,account_id,amount) VALUES ($1,$2,$3)', [txId, id, merged.get(id)]);
+  for (const id of [...merged.keys()].sort()) {
+    const amt = merged.get(id);
+    const filter = { _id: id };
+    const guarded = amt < 0 && id.startsWith('u:');
+    if (guarded) filter.balance = { $gte: -amt };
+    const r = await cols.accounts.updateOne(filter, { $inc: { balance: amt } }, { session: s });
+    if (!r.matchedCount) throw guarded ? new UserError('Insufficient funds') : new Error('account missing ' + id);
+    await cols.entries.insertOne({ transaction_id: txId, account_id: id, amount: amt, created_at: now() }, { session: s });
   }
 }
 
-async function dailyUsed(client, userId, currency) {
-  const r = await client.query(
-    `SELECT COALESCE(SUM(amount),0)::bigint AS used FROM transactions
-     WHERE initiator_id=$1 AND currency=$2 AND type IN ('transfer','cashout')
-       AND status IN ('pending','completed') AND created_at >= now() - interval '24 hours'`, [userId, currency]);
-  return Number(r.rows[0].used);
+async function dailyUsed(s, userId, currency) {
+  const r = await cols.transactions.aggregate([
+    { $match: { initiator_id: oid(userId), currency, type: { $in: ['transfer', 'cashout'] },
+        status: { $in: ['pending', 'completed'] }, created_at: { $gte: new Date(Date.now() - 24 * 3600 * 1000) } } },
+    { $group: { _id: null, used: { $sum: '$amount' } } },
+  ], { session: s }).toArray();
+  return r[0] ? r[0].used : 0;
 }
 
-async function checkLimits(client, user, currency, amount) {
+async function checkLimits(s, user, currency, amount) {
   const lim = cfg.limits[user.kyc_status === 'verified' ? 'verified' : 'none'][currency];
-  if (amount > lim.single) throw new UserError(
-    `Per-transaction limit is ${lim.single / 100} ${currency}.` + (user.kyc_status !== 'verified' ? ' Verify your ID to raise limits.' : ''));
-  const used = await dailyUsed(client, user.id, currency);
-  if (used + amount > lim.daily) throw new UserError(
-    `Daily limit of ${lim.daily / 100} ${currency} reached.` + (user.kyc_status !== 'verified' ? ' Verify your ID to raise limits.' : ''));
+  const hint = user.kyc_status !== 'verified' ? ' Verify your ID to raise limits.' : '';
+  if (amount > lim.single) throw new UserError(`Per-transaction limit is ${lim.single / 100} ${currency}.` + hint);
+  if ((await dailyUsed(s, user._id, currency)) + amount > lim.daily) throw new UserError(`Daily limit of ${lim.daily / 100} ${currency} reached.` + hint);
 }
 
-async function lockUser(client, userId) {
-  const r = await client.query('SELECT * FROM users WHERE id=$1 FOR UPDATE', [userId]);
-  return r.rows[0];
-}
+// Writing to the user's document makes concurrent transactions for the same user conflict and retry,
+// so limits and balances can't be raced.
+const lockUser = (s, userId) =>
+  cols.users.findOneAndUpdate({ _id: oid(userId) }, { $inc: { lock_seq: 1 } }, { session: s, returnDocument: 'after' });
 
-function isUnique(e) { return e && e.code === '23505'; }
-
-async function existingByIdem(client, userId, key) {
+async function existingByIdem(s, userId, key) {
   if (!key) return null;
-  const r = await client.query('SELECT * FROM transactions WHERE initiator_id=$1 AND idem_key=$2', [userId, key]);
-  return r.rows[0] || null;
+  return shapeTx(await cols.transactions.findOne({ initiator_id: oid(userId), idem_key: key }, { session: s }));
+}
+
+async function insertTx(s, f) {
+  const doc = { fee: 0, counterparty_id: null, msisdn: null, note: null, provider: null, provider_ref: null,
+    poll_url: null, idem_key: null, created_at: now(), updated_at: now(), ...f };
+  doc._id = (await cols.transactions.insertOne(doc, { session: s })).insertedId;
+  return doc;
 }
 
 // ---- P2P transfer (instant, internal) ----
 async function transfer({ senderId, recipientPhone, currency, amount, note, idemKey }) {
-  return withTx(async (c) => {
-    const sender = await lockUser(c, senderId); // serialises a user's own spending => limits can't be raced
-    const dup = await existingByIdem(c, senderId, idemKey);
+  return withTx(async (s) => {
+    const sender = await lockUser(s, senderId);
+    const dup = await existingByIdem(s, senderId, idemKey);
     if (dup) return dup;
     if (!cfg.currencies.includes(currency)) throw new UserError('Unsupported currency');
-    const rec = (await c.query('SELECT * FROM users WHERE phone=$1', [recipientPhone])).rows[0];
+    const rec = await cols.users.findOne({ phone: recipientPhone }, { session: s });
     if (!rec) throw new UserError('No account found for that number. Ask them to sign up first.');
-    if (rec.id === senderId) throw new UserError("You can't send money to yourself");
-    await checkLimits(c, sender, currency, amount);
+    if (String(rec._id) === String(senderId)) throw new UserError("You can't send money to yourself");
+    await checkLimits(s, sender, currency, amount);
     const fee = feeFor(amount, cfg.feeBps.transfer);
-    const tx = (await c.query(
-      `INSERT INTO transactions(type,status,currency,amount,fee,initiator_id,counterparty_id,note,idem_key)
-       VALUES ('transfer','completed',$1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-      [currency, amount, fee, senderId, rec.id, note || null, idemKey || null])).rows[0];
-    const legs = [
-      { accountId: await acct(c, senderId, currency), amount: -(amount + fee) },
-      { accountId: await acct(c, rec.id, currency), amount },
-    ];
-    if (fee) legs.push({ accountId: await sysAcct(c, 'fees', currency), amount: fee });
-    await applyLegs(c, tx.id, legs);
-    return tx;
+    const tx = await insertTx(s, { type: 'transfer', status: 'completed', currency, amount, fee,
+      initiator_id: oid(senderId), counterparty_id: rec._id, note: note || null, idem_key: idemKey || null });
+    const legs = [{ accountId: uAcct(senderId, currency), amount: -(amount + fee) }, { accountId: uAcct(rec._id, currency), amount }];
+    if (fee) legs.push({ accountId: sAcct('fees', currency), amount: fee });
+    await applyLegs(s, tx._id, legs);
+    return shapeTx(tx);
   });
 }
 
 // ---- Cash in ----
 async function createCashIn({ userId, currency, amount, msisdn, provider, idemKey }) {
-  return withTx(async (c) => {
-    const dup = await existingByIdem(c, userId, idemKey);
+  return withTx(async (s) => {
+    const dup = await existingByIdem(s, userId, idemKey);
     if (dup) return dup;
-    return (await c.query(
-      `INSERT INTO transactions(type,status,currency,amount,initiator_id,msisdn,provider,idem_key)
-       VALUES ('cashin','pending',$1,$2,$3,$4,$5,$6) RETURNING *`,
-      [currency, amount, userId, msisdn, provider, idemKey || null])).rows[0];
+    if (!cfg.currencies.includes(currency)) throw new UserError('Unsupported currency');
+    return shapeTx(await insertTx(s, { type: 'cashin', status: 'pending', currency, amount,
+      initiator_id: oid(userId), msisdn, provider, idem_key: idemKey || null }));
   });
 }
 
 async function setProviderInfo(txId, { providerRef, pollUrl }) {
-  await require('./db').pool.query(
-    'UPDATE transactions SET provider_ref=$2, poll_url=$3, updated_at=now() WHERE id=$1', [txId, providerRef || null, pollUrl || null]);
+  await cols.transactions.updateOne({ _id: oid(txId) },
+    { $set: { provider_ref: providerRef || null, poll_url: pollUrl || null, updated_at: now() } });
 }
 
-// Idempotent: only credits once, only if still pending.
+// Idempotent: the status flip is claimed atomically, so it can only credit once.
 async function completeCashIn(txId, providerRef) {
-  return withTx(async (c) => {
-    const tx = (await c.query('SELECT * FROM transactions WHERE id=$1 FOR UPDATE', [txId])).rows[0];
-    if (!tx || tx.type !== 'cashin' || tx.status !== 'pending') return tx;
-    await applyLegs(c, tx.id, [
-      { accountId: await sysAcct(c, 'external', tx.currency), amount: -tx.amount },
-      { accountId: await acct(c, tx.initiator_id, tx.currency), amount: tx.amount },
+  return withTx(async (s) => {
+    const claimed = await cols.transactions.findOneAndUpdate(
+      { _id: oid(txId), type: 'cashin', status: 'pending' },
+      { $set: { status: 'completed', updated_at: now(), ...(providerRef ? { provider_ref: providerRef } : {}) } },
+      { session: s, returnDocument: 'after' });
+    if (!claimed) return shapeTx(await cols.transactions.findOne({ _id: oid(txId) }, { session: s }));
+    await applyLegs(s, claimed._id, [
+      { accountId: sAcct('external', claimed.currency), amount: -claimed.amount },
+      { accountId: uAcct(claimed.initiator_id, claimed.currency), amount: claimed.amount },
     ]);
-    return (await c.query(
-      `UPDATE transactions SET status='completed', provider_ref=COALESCE($2,provider_ref), updated_at=now() WHERE id=$1 RETURNING *`,
-      [txId, providerRef || null])).rows[0];
+    return shapeTx(claimed);
   });
 }
 
 async function failTx(txId) {
-  const r = await require('./db').pool.query(
-    `UPDATE transactions SET status='failed', updated_at=now() WHERE id=$1 AND status='pending' RETURNING *`, [txId]);
-  return r.rows[0];
+  return shapeTx(await cols.transactions.findOneAndUpdate({ _id: oid(txId), status: 'pending' },
+    { $set: { status: 'failed', updated_at: now() } }, { returnDocument: 'after' }));
 }
 
-// ---- Cash out: funds move to payout_hold until paid out or rejected ----
+// ---- Cash out: funds sit in payout_hold until paid out or rejected ----
 async function requestCashOut({ userId, currency, amount, msisdn, provider, idemKey }) {
-  return withTx(async (c) => {
-    const user = await lockUser(c, userId);
-    const dup = await existingByIdem(c, userId, idemKey);
+  return withTx(async (s) => {
+    const user = await lockUser(s, userId);
+    const dup = await existingByIdem(s, userId, idemKey);
     if (dup) return dup;
     if (!cfg.currencies.includes(currency)) throw new UserError('Unsupported currency');
     if (user.kyc_status !== 'verified') throw new UserError('Verify your ID before withdrawing money.');
-    await checkLimits(c, user, currency, amount);
+    await checkLimits(s, user, currency, amount);
     const fee = feeFor(amount, cfg.feeBps.cashout);
-    const tx = (await c.query(
-      `INSERT INTO transactions(type,status,currency,amount,fee,initiator_id,msisdn,provider,idem_key)
-       VALUES ('cashout','pending',$1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-      [currency, amount, fee, userId, msisdn, provider, idemKey || null])).rows[0];
-    const legs = [
-      { accountId: await acct(c, userId, currency), amount: -(amount + fee) },
-      { accountId: await sysAcct(c, 'payout_hold', currency), amount },
-    ];
-    if (fee) legs.push({ accountId: await sysAcct(c, 'fees', currency), amount: fee });
-    await applyLegs(c, tx.id, legs);
-    return tx;
+    const tx = await insertTx(s, { type: 'cashout', status: 'pending', currency, amount, fee,
+      initiator_id: oid(userId), msisdn, provider, idem_key: idemKey || null });
+    const legs = [{ accountId: uAcct(userId, currency), amount: -(amount + fee) }, { accountId: sAcct('payout_hold', currency), amount }];
+    if (fee) legs.push({ accountId: sAcct('fees', currency), amount: fee });
+    await applyLegs(s, tx._id, legs);
+    return shapeTx(tx);
   });
 }
 
-async function completeCashOut(txId, providerRef) {
-  return withTx(async (c) => {
-    const tx = (await c.query('SELECT * FROM transactions WHERE id=$1 FOR UPDATE', [txId])).rows[0];
-    if (!tx || tx.type !== 'cashout' || tx.status !== 'pending') return tx;
-    await applyLegs(c, tx.id, [
-      { accountId: await sysAcct(c, 'payout_hold', tx.currency), amount: -tx.amount },
-      { accountId: await sysAcct(c, 'external', tx.currency), amount: tx.amount },
-    ]);
-    return (await c.query(
-      `UPDATE transactions SET status='completed', provider_ref=COALESCE($2,provider_ref), updated_at=now() WHERE id=$1 RETURNING *`,
-      [txId, providerRef || null])).rows[0];
+async function resolveCashOut(txId, status, extra, legsFor) {
+  return withTx(async (s) => {
+    const tx = await cols.transactions.findOneAndUpdate(
+      { _id: oid(txId), type: 'cashout', status: 'pending' },
+      { $set: { status, updated_at: now(), ...extra } }, { session: s, returnDocument: 'after' });
+    if (!tx) return shapeTx(await cols.transactions.findOne({ _id: oid(txId) }, { session: s }));
+    await applyLegs(s, tx._id, legsFor(tx));
+    return shapeTx(tx);
   });
 }
 
-async function rejectCashOut(txId) {
-  return withTx(async (c) => {
-    const tx = (await c.query('SELECT * FROM transactions WHERE id=$1 FOR UPDATE', [txId])).rows[0];
-    if (!tx || tx.type !== 'cashout' || tx.status !== 'pending') return tx;
-    const legs = [
-      { accountId: await sysAcct(c, 'payout_hold', tx.currency), amount: -tx.amount },
-      { accountId: await acct(c, tx.initiator_id, tx.currency), amount: tx.amount + Number(tx.fee) },
-    ];
-    if (Number(tx.fee)) legs.push({ accountId: await sysAcct(c, 'fees', tx.currency), amount: -Number(tx.fee) });
-    await applyLegs(c, tx.id, legs);
-    return (await c.query(`UPDATE transactions SET status='rejected', updated_at=now() WHERE id=$1 RETURNING *`, [txId])).rows[0];
-  });
-}
+const completeCashOut = (txId, providerRef) => resolveCashOut(txId, 'completed', providerRef ? { provider_ref: providerRef } : {}, (tx) => [
+  { accountId: sAcct('payout_hold', tx.currency), amount: -tx.amount },
+  { accountId: sAcct('external', tx.currency), amount: tx.amount },
+]);
+
+const rejectCashOut = (txId) => resolveCashOut(txId, 'rejected', {}, (tx) => {
+  const legs = [
+    { accountId: sAcct('payout_hold', tx.currency), amount: -tx.amount },
+    { accountId: uAcct(tx.initiator_id, tx.currency), amount: tx.amount + tx.fee },
+  ];
+  if (tx.fee) legs.push({ accountId: sAcct('fees', tx.currency), amount: -tx.fee });
+  return legs;
+});
 
 async function balances(userId) {
-  const r = await require('./db').pool.query(
-    `SELECT currency, balance FROM accounts WHERE user_id=$1`, [userId]);
   const out = { USD: 0, ZWG: 0 };
-  r.rows.forEach((x) => (out[x.currency] = Number(x.balance)));
+  for (const a of await cols.accounts.find({ user_id: oid(userId) }).toArray()) out[a.currency] = a.balance;
   return out;
 }
 
-// Integrity check: every transaction nets to zero, balances equal sum of entries, whole ledger nets to zero.
+// ---- reads with counterparty names attached ----
+async function withParties(txs) {
+  const ids = [...new Set(txs.flatMap((t) => [t.initiator_id, t.counterparty_id].filter(Boolean).map(String)))].map(oid);
+  const users = new Map((await cols.users.find({ _id: { $in: ids } }, { projection: { name: 1, phone: 1 } }).toArray()).map((u) => [String(u._id), u]));
+  return txs.map((t) => {
+    const i = users.get(String(t.initiator_id)) || {}, c = users.get(String(t.counterparty_id)) || {};
+    return { ...shapeTx(t), init_name: i.name, init_phone: i.phone, cp_name: c.name, cp_phone: c.phone };
+  });
+}
+async function listForUser(userId, limit = 25) {
+  const u = oid(userId);
+  return withParties(await cols.transactions.find({ $or: [{ initiator_id: u }, { counterparty_id: u }] }).sort({ created_at: -1 }).limit(limit).toArray());
+}
+async function getForUser(txId, userId) {
+  const u = oid(userId);
+  const t = await cols.transactions.findOne({ _id: oid(txId), $or: [{ initiator_id: u }, { counterparty_id: u }] });
+  return t ? (await withParties([t]))[0] : null;
+}
+async function listAdmin(filter, limit = 30) {
+  return withParties(await cols.transactions.find(filter).sort({ created_at: filter.status ? 1 : -1 }).limit(limit).toArray());
+}
+
+// Integrity: every tx nets to zero, each balance equals the sum of its entries, whole ledger nets to zero.
 async function reconcile() {
-  const q = (s) => require('./db').pool.query(s);
-  const unbalanced = (await q(`SELECT count(*)::int n FROM (SELECT transaction_id FROM entries GROUP BY 1 HAVING SUM(amount)<>0) x`)).rows[0].n;
-  const drift = (await q(`SELECT count(*)::int n FROM accounts a WHERE a.balance <> COALESCE((SELECT SUM(amount) FROM entries e WHERE e.account_id=a.id),0)`)).rows[0].n;
-  const total = Number((await q(`SELECT COALESCE(SUM(balance),0)::bigint s FROM accounts`)).rows[0].s);
+  const unbalanced = (await cols.entries.aggregate([{ $group: { _id: '$transaction_id', s: { $sum: '$amount' } } }, { $match: { s: { $ne: 0 } } }, { $count: 'n' }]).toArray())[0]?.n || 0;
+  const sums = new Map((await cols.entries.aggregate([{ $group: { _id: '$account_id', s: { $sum: '$amount' } } }]).toArray()).map((x) => [x._id, x.s]));
+  const accts = await cols.accounts.find().toArray();
+  const drift = accts.filter((a) => a.balance !== (sums.get(a._id) || 0)).length;
+  const total = accts.reduce((a, x) => a + x.balance, 0);
   return { ok: unbalanced === 0 && drift === 0 && total === 0, unbalanced, drift, total };
+}
+async function books() {
+  return cols.accounts.aggregate([{ $group: { _id: { kind: '$kind', currency: '$currency' }, balance: { $sum: '$balance' } } },
+    { $project: { _id: 0, kind: '$_id.kind', currency: '$_id.currency', balance: 1 } }, { $sort: { kind: 1, currency: 1 } }]).toArray();
 }
 
 module.exports = {
   ensureUserAccounts, transfer, createCashIn, setProviderInfo, completeCashIn, failTx,
-  requestCashOut, completeCashOut, rejectCashOut, balances, reconcile, isUnique,
+  requestCashOut, completeCashOut, rejectCashOut, balances, reconcile, books,
+  listForUser, getForUser, listAdmin,
 };

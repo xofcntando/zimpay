@@ -1,12 +1,10 @@
-const EmbeddedPostgres = require('embedded-postgres').default;
-const fs = require('fs'); const os = require('os'); const path = require('path');
-
-async function startDb(port = 54329) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zp-pg-'));
-  const pg = new EmbeddedPostgres({ databaseDir: dir, user: 'postgres', password: 'pw', port, persistent: false });
-  await pg.initialise(); await pg.start();
-  process.env.DATABASE_URL = `postgres://postgres:pw@localhost:${port}/postgres`;
-  process.env.ADMIN_PHONE = '0770000000';
-  return pg;
+const { MongoMemoryReplSet } = require('mongodb-memory-server');
+process.env.ADMIN_PHONE = '0770000000';
+async function startDb() {
+  const rs = await MongoMemoryReplSet.create({
+    replSet: { count: 1, storageEngine: 'wiredTiger', args: ['--setParameter', 'indexBuildMinAvailableDiskSpaceMB=10'] },
+  });
+  process.env.MONGODB_URI = rs.getUri();
+  return rs;
 }
 module.exports = { startDb };

@@ -6,12 +6,12 @@ let pg, server, base, L, db;
 
 before(async () => {
   pg = await startDb();
-  db = require('../src/db'); await db.migrate();
+  db = require('../src/db'); await db.init(process.env.MONGODB_URI, 'zimpay_test');
   L = require('../src/ledger');
   const { createApp } = require('../src/server');
   server = createApp().listen(0); base = `http://localhost:${server.address().port}`;
 });
-after(async () => { server && server.close(); await db.pool.end(); await pg.stop(); });
+after(async () => { server && server.close(); await db.close(); await pg.stop(); });
 
 // minimal cookie-aware client
 function client() {
@@ -37,7 +37,7 @@ async function signup(name, phone) {
   assert.equal(r.res.status, 302, r.text);
   return c;
 }
-const uid = async (phone) => (await db.pool.query('SELECT id FROM users WHERE phone=$1', [phone])).rows[0].id;
+const uid = async (phone) => String((await db.cols.users.findOne({ phone }))._id);
 
 test('rejects POST without CSRF token', async () => {
   const c = client(); await c.req('GET', '/login');
@@ -93,7 +93,7 @@ test('concurrent spends cannot overdraw', async () => {
 test('withdrawal needs KYC; admin approves; reject refunds incl. fee', async () => {
   const id = await uid('+263771000001');
   await assert.rejects(L.requestCashOut({ userId: id, currency: 'USD', amount: 500, msisdn: '+263771000001', provider: 'x' }), /Verify/);
-  await db.pool.query(`UPDATE users SET kyc_status='verified' WHERE id=$1`, [id]);
+  await db.cols.users.updateOne({ _id: db.oid(id) }, { $set: { kyc_status: 'verified' } });
   const before = (await L.balances(id)).USD;
   const tx = await L.requestCashOut({ userId: id, currency: 'USD', amount: 1000, msisdn: '+263771000001', provider: 'x' });
   assert.equal(tx.fee, 10); // 1%

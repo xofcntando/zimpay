@@ -2,7 +2,7 @@ const router = require('express').Router();
 const cfg = require('../config');
 const provider = require('../providers');
 const L = require('../ledger');
-const { pool } = require('../db');
+const { cols, oid, isOid } = require('../db');
 const { UserError, parseAmount, normPhone } = require('../money');
 const { wrap, requireLogin, flash } = require('./util');
 
@@ -10,12 +10,7 @@ const cur = (v) => { if (!cfg.currencies.includes(v)) throw new UserError('Choos
 const idem = (v) => String(v || '').slice(0, 64) || null;
 
 router.get('/dashboard', requireLogin, wrap(async (req, res) => {
-  const balances = await L.balances(req.user.id);
-  const txs = (await pool.query(
-    `SELECT t.*, i.name AS init_name, i.phone AS init_phone, c.name AS cp_name, c.phone AS cp_phone
-     FROM transactions t JOIN users i ON i.id=t.initiator_id LEFT JOIN users c ON c.id=t.counterparty_id
-     WHERE t.initiator_id=$1 OR t.counterparty_id=$1 ORDER BY t.created_at DESC LIMIT 25`, [req.user.id])).rows;
-  res.render('dashboard', { balances, txs });
+  res.render('dashboard', { balances: await L.balances(req.user.id), txs: await L.listForUser(req.user.id, 25) });
 }));
 
 const form = (view) => [requireLogin, (req, res) => res.render(view, { key: require('crypto').randomUUID() })];
@@ -63,11 +58,8 @@ router.post('/withdraw', requireLogin, wrap(async (req, res) => {
 }));
 
 router.get('/tx/:id', requireLogin, wrap(async (req, res) => {
-  if (!/^[0-9a-f-]{36}$/.test(req.params.id)) return res.status(404).render('error', { message: 'Not found' });
-  let tx = (await pool.query(
-    `SELECT t.*, i.name AS init_name, i.phone AS init_phone, c.name AS cp_name, c.phone AS cp_phone
-     FROM transactions t JOIN users i ON i.id=t.initiator_id LEFT JOIN users c ON c.id=t.counterparty_id
-     WHERE t.id=$1 AND (t.initiator_id=$2 OR t.counterparty_id=$2)`, [req.params.id, req.user.id])).rows[0];
+  if (!isOid(req.params.id)) return res.status(404).render('error', { message: 'Not found' });
+  let tx = await L.getForUser(req.params.id, req.user.id);
   if (!tx) return res.status(404).render('error', { message: 'Not found' });
   // pending cash-ins: ask the provider for the current status whenever the user looks
   if (tx.type === 'cashin' && tx.status === 'pending' && provider.checkCashIn) {
@@ -84,7 +76,7 @@ router.post('/kyc', requireLogin, wrap(async (req, res) => {
   // Zimbabwe national ID format e.g. 63-123456-A-42 (digits, optional dashes, a letter, 2 digits)
   if (!/^\d{2}-?\d{6,7}-?[A-Z]-?\d{2}$/.test(id)) throw new UserError('Enter your ID like 63-123456-A-42');
   if (req.user.kyc_status === 'verified') throw new UserError('Already verified');
-  await pool.query(`UPDATE users SET national_id=$2, kyc_status='pending' WHERE id=$1`, [req.user.id, id]);
+  await cols.users.updateOne({ _id: oid(req.user.id) }, { $set: { national_id: id, kyc_status: 'pending' } });
   flash(req, 'ok', 'Submitted. An admin will review it.');
   res.redirect('/dashboard');
 }));
@@ -93,7 +85,9 @@ router.post('/kyc', requireLogin, wrap(async (req, res) => {
 router.post('/webhooks/paynow', require('express').urlencoded({ extended: false }), wrap(async (req, res) => {
   if (provider.name !== 'paynow') return res.sendStatus(404);
   if (!provider.verify(req.body)) return res.sendStatus(400);
-  const tx = (await pool.query('SELECT * FROM transactions WHERE id=$1', [String(req.body.reference)])).rows[0];
+  const ref = String(req.body.reference);
+  const raw = isOid(ref) ? await cols.transactions.findOne({ _id: oid(ref) }) : null;
+  const tx = raw && { ...raw, id: String(raw._id) };
   if (tx && tx.status === 'pending') {
     const r = await provider.checkCashIn({ tx });
     if (r.status === 'paid') await L.completeCashIn(tx.id, r.providerRef);
