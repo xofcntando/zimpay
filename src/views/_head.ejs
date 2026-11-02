@@ -2,11 +2,12 @@
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title><%= cfg.appName %></title>
+<link rel="icon" href="/favicon.png">
 <link rel="stylesheet" href="/style.css">
 </head><body>
 <% if (cfg.sandbox) { %><div class="sandbox">SANDBOX MODE - no real money moves. Cash-in/out are simulated.</div><% } %>
 <header class="bar">
-  <a class="brand" href="/"><span class="dot"></span><%= cfg.appName %></a>
+  <a class="brand" href="/"><img src="/logo.png" alt="" width="34" height="34" class="logo"><%= cfg.appName %></a>
   <% if (user) { %>
   <nav>
     <a href="/dashboard">Wallet</a>

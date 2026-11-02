@@ -1,5 +1,6 @@
 <%- include('_head') %>
 <form class="card" method="post" action="/login">
+  <img src="/logo-512.png" alt="ZimPay" width="84" height="84" class="hero-logo">
   <h2>Log in</h2>
   <input type="hidden" name="_csrf" value="<%= csrf %>">
   <label>Mobile number<input name="phone" inputmode="tel" placeholder="0771234567" required autocomplete="tel"></label>

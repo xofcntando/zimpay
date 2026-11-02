@@ -1,13 +1,14 @@
 <%- include('_head') %>
 <form class="card" method="post" action="/topup">
-  <h2>Add money</h2>
+  <h2>Add money with EcoCash <span class="eco">EcoCash</span></h2>
   <input type="hidden" name="_csrf" value="<%= csrf %>"><input type="hidden" name="key" value="<%= key %>">
-  <label>Mobile wallet number (EcoCash)<input name="msisdn" inputmode="tel" value="<%= user.phone %>" required></label>
+  <label>EcoCash number<input name="msisdn" inputmode="tel" value="<%= user.phone %>" required></label>
   <div class="row">
     <label>Amount<input name="amount" inputmode="decimal" placeholder="20.00" required></label>
     <label>Currency<select name="currency"><option>USD</option><option>ZWG</option></select></label>
   </div>
   <% if (cfg.sandbox) { %><p class="muted">Sandbox: a number ending in 0000 simulates a failed payment.</p><% } %>
-  <button class="btn">Add money</button>
+  <% if (!cfg.sandbox) { %><p class="muted">You will get an EcoCash prompt on your phone. Enter your PIN to approve it.</p><% } %>
+  <button class="btn">Pay with EcoCash</button>
 </form>
 <%- include('_foot') %>

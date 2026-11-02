@@ -1,6 +1,7 @@
 # ZimPay (sandbox)
 
-(c) 2026 Ntandomods. Source-available under the [Ntandomods Source-Available License](LICENSE): you may read and test it, but production use, commercial use and redistribution need written permission. The license is not a financial licence.
+(c) 2026 Ntandomods. Released under the [MIT License](LICENSE).
+The MIT license covers the code only. It is not a payment or money-transfer licence: anyone running this with real funds must hold the required Reserve Bank of Zimbabwe authorisation or operate through a licensed partner.
 
 Wallet-to-wallet money transfer app for Zimbabwe: USD and ZiG wallets, send by mobile number, add money, withdraw,
 ID verification queue, admin console, double-entry ledger. Node 20+, Express, MongoDB (Atlas).

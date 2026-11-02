@@ -20,3 +20,6 @@ input.sm{display:inline-block;width:110px;padding:6px;margin:0}
 .notice{background:#fff8d6;border:1px solid #f0dc7a;border-radius:10px;padding:12px;margin:12px 0}.notice.bad{background:#fde3e7;border-color:#d21f3c}
 .big{font-size:32px;font-weight:800;margin:4px 0}.st-completed{color:var(--g)}.st-failed,.st-rejected{color:var(--r)}
 table{width:100%;border-collapse:collapse;background:#fff;font-size:14px}th,td{text-align:left;padding:8px;border-bottom:1px solid var(--line)}
+
+.logo{border-radius:9px;background:#fff}.hero-logo{display:block;margin:0 auto 8px;border-radius:20px}.card h2{margin-top:0}
+.eco{display:inline-block;background:#e8f1ff;color:#0a4aa8;font-weight:700;font-size:12px;padding:3px 8px;border-radius:99px}

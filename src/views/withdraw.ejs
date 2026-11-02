@@ -2,7 +2,7 @@
 <form class="card" method="post" action="/withdraw">
   <h2>Withdraw</h2>
   <input type="hidden" name="_csrf" value="<%= csrf %>"><input type="hidden" name="key" value="<%= key %>">
-  <label>Pay out to mobile wallet<input name="msisdn" inputmode="tel" value="<%= user.phone %>" required></label>
+  <label>Pay out to EcoCash number<input name="msisdn" inputmode="tel" value="<%= user.phone %>" required></label>
   <div class="row">
     <label>Amount<input name="amount" inputmode="decimal" required></label>
     <label>Currency<select name="currency"><option>USD</option><option>ZWG</option></select></label>

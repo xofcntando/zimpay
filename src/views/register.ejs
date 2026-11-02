@@ -1,5 +1,6 @@
 <%- include('_head') %>
 <form class="card" method="post" action="/register">
+  <img src="/logo-512.png" alt="ZimPay" width="84" height="84" class="hero-logo">
   <h2>Create account</h2>
   <input type="hidden" name="_csrf" value="<%= csrf %>">
   <label>Full name<input name="name" required autocomplete="name"></label>
