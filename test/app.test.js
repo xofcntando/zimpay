@@ -115,3 +115,22 @@ test('admin area hidden from normal users, visible to ADMIN_PHONE', async () => 
   const r = await admin.req('GET', '/admin');
   assert.equal(r.res.status, 200); assert.match(r.text, /Ledger integrity: <b>OK/);
 });
+
+test('manual EcoCash top-up: reference is single-use, admin approval credits once', async () => {
+  const id = await uid('+263771000002');
+  const before = (await L.balances(id)).USD;
+  const tx = await L.createCashIn({ userId: id, currency: 'USD', amount: 2500, msisdn: '+263771000002', provider: 'manual', providerRef: 'MP1234.ABC' });
+  assert.equal(tx.status, 'pending');
+  await assert.rejects(L.createCashIn({ userId: id, currency: 'USD', amount: 2500, msisdn: '+263771000002', provider: 'manual', providerRef: 'MP1234.ABC' }), (e) => e.code === 11000);
+  assert.equal((await L.balances(id)).USD, before);
+  await Promise.all([L.completeCashIn(tx.id), L.completeCashIn(tx.id)]);
+  assert.equal((await L.balances(id)).USD, before + 2500);
+  assert.equal((await L.reconcile()).ok, true);
+  const admin = client(); const t = await admin.csrf('/login');
+  await admin.req('POST', '/login', { _csrf: t, phone: '0770000000', password: 'password123' });
+  const tx2 = await L.createCashIn({ userId: id, currency: 'USD', amount: 100, msisdn: '+263771000002', provider: 'manual', providerRef: 'MP9999.XYZ' });
+  const page = await admin.req('GET', '/admin'); assert.match(page.text, /Pending EcoCash top-ups \(1\)/);
+  const t2 = await admin.csrf('/admin');
+  await admin.req('POST', '/admin/topup/' + tx2.id, { _csrf: t2, decision: 'approve' });
+  assert.equal((await L.balances(id)).USD, before + 2600);
+});

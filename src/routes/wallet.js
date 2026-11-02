@@ -29,10 +29,22 @@ router.post('/send', requireLogin, wrap(async (req, res) => {
 
 router.post('/topup', requireLogin, wrap(async (req, res) => {
   const msisdn = normPhone(req.body.msisdn);
-  const tx = await L.createCashIn({
-    userId: req.user.id, currency: cur(req.body.currency), amount: parseAmount(req.body.amount),
-    msisdn, provider: provider.name, idemKey: idem(req.body.key),
-  });
+  let providerRef;
+  if (provider.name === 'manual') {
+    providerRef = String(req.body.ref || '').trim().toUpperCase().replace(/\s/g, '');
+    if (!/^[A-Z0-9.]{6,30}$/.test(providerRef)) throw new UserError('Enter the EcoCash reference from your confirmation SMS');
+  }
+  let tx;
+  try {
+    tx = await L.createCashIn({
+      userId: req.user.id, currency: cur(req.body.currency), amount: parseAmount(req.body.amount),
+      msisdn, provider: provider.name, idemKey: idem(req.body.key), providerRef,
+    });
+  } catch (e) {
+    if (e.code === 11000) throw new UserError('That EcoCash reference was already submitted.');
+    throw e;
+  }
+  if (provider.name === 'manual') flash(req, 'ok', 'Received. Your balance updates once we confirm the EcoCash payment.');
   if (tx.status === 'pending' && !tx.provider_ref) {
     const r = await provider.initiateCashIn({ tx, user: req.user });
     if (r.status === 'failed') { await L.failTx(tx.id); throw new UserError(r.error || 'Payment could not be started'); }

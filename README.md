@@ -20,6 +20,12 @@ The app refuses to start with a live provider unless `LICENSED_PARTNER_CONFIRMED
     npm install && MONGODB_URI=mongodb+srv://... npm start
     npm test        # spins up an in-memory MongoDB replica set, no setup needed
 
+## Payment modes
+- `mock` (default): sandbox, instant fake payments.
+- `manual`: customers send EcoCash to `MERCHANT_ECOCASH_NUMBER` and submit the reference; an admin confirms in `/admin`. No third-party API. Each reference can be used once. Withdrawals are also paid by hand.
+- `paynow`: EcoCash push prompt via Paynow (cash-in only; test it in Paynow test mode first).
+The two live modes require `LICENSED_PARTNER_CONFIRMED=yes`.
+
 ## How money is modelled
 Amounts are integer cents. Every movement is a transaction with ledger entries that sum to zero.
 `external` = money held at the bank/provider (negative when users hold balances), `fees`, `payout_hold`.

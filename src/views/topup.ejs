@@ -3,12 +3,16 @@
   <h2>Add money with EcoCash <span class="eco">EcoCash</span></h2>
   <input type="hidden" name="_csrf" value="<%= csrf %>"><input type="hidden" name="key" value="<%= key %>">
   <label>EcoCash number<input name="msisdn" inputmode="tel" value="<%= user.phone %>" required></label>
+  <% if (cfg.provider === 'manual') { %>
+  <div class="notice"><b>Step 1.</b> In EcoCash, send the amount to <b><%= cfg.merchantEcocash %></b><%= cfg.merchantName ? ' (' + cfg.merchantName + ')' : '' %>.<br><b>Step 2.</b> Enter the amount and the reference from the confirmation SMS below.</div>
+  <label>EcoCash reference<input name="ref" placeholder="e.g. MP260101.1234.A12345" required></label>
+  <% } %>
   <div class="row">
     <label>Amount<input name="amount" inputmode="decimal" placeholder="20.00" required></label>
     <label>Currency<select name="currency"><option>USD</option><option>ZWG</option></select></label>
   </div>
   <% if (cfg.sandbox) { %><p class="muted">Sandbox: a number ending in 0000 simulates a failed payment.</p><% } %>
-  <% if (!cfg.sandbox) { %><p class="muted">You will get an EcoCash prompt on your phone. Enter your PIN to approve it.</p><% } %>
-  <button class="btn">Pay with EcoCash</button>
+  <% if (cfg.provider === 'paynow') { %><p class="muted">You will get an EcoCash prompt on your phone. Enter your PIN to approve it.</p><% } %>
+  <button class="btn"><%= cfg.provider === 'manual' ? 'I have paid' : 'Pay with EcoCash' %></button>
 </form>
 <%- include('_foot') %>

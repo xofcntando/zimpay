@@ -91,13 +91,13 @@ async function transfer({ senderId, recipientPhone, currency, amount, note, idem
 }
 
 // ---- Cash in ----
-async function createCashIn({ userId, currency, amount, msisdn, provider, idemKey }) {
+async function createCashIn({ userId, currency, amount, msisdn, provider, idemKey, providerRef }) {
   return withTx(async (s) => {
     const dup = await existingByIdem(s, userId, idemKey);
     if (dup) return dup;
     if (!cfg.currencies.includes(currency)) throw new UserError('Unsupported currency');
     return shapeTx(await insertTx(s, { type: 'cashin', status: 'pending', currency, amount,
-      initiator_id: oid(userId), msisdn, provider, idem_key: idemKey || null }));
+      initiator_id: oid(userId), msisdn, provider, provider_ref: providerRef || null, idem_key: idemKey || null }));
   });
 }
 

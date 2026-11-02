@@ -24,5 +24,7 @@ module.exports = {
     none:     { USD: { single: 5000,    daily: 10000 },   ZWG: { single: 130000,   daily: 260000 } },
     verified: { USD: { single: 200000,  daily: 500000 },  ZWG: { single: 5200000,  daily: 13000000 } },
   },
+  merchantEcocash: env.MERCHANT_ECOCASH_NUMBER || '',
+  merchantName: env.MERCHANT_ECOCASH_NAME || '',
   paynow: { id: env.PAYNOW_ID, key: env.PAYNOW_KEY, authEmail: env.PAYNOW_AUTH_EMAIL },
 };

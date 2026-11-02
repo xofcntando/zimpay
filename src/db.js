@@ -17,6 +17,9 @@ async function init(uri = cfg.mongoUri, dbName = cfg.dbName) {
   await cols.users.createIndex({ phone: 1 }, { unique: true });
   await cols.transactions.createIndex({ initiator_id: 1, idem_key: 1 },
     { unique: true, partialFilterExpression: { idem_key: { $type: 'string' } } });
+  // an EcoCash reference can only be claimed once (manual top-ups)
+  await cols.transactions.createIndex({ provider_ref: 1 },
+    { unique: true, partialFilterExpression: { provider: 'manual', type: 'cashin', provider_ref: { $type: 'string' } } });
   await cols.transactions.createIndex({ initiator_id: 1, created_at: -1 });
   await cols.transactions.createIndex({ counterparty_id: 1, created_at: -1 });
   await cols.entries.createIndex({ transaction_id: 1 });
