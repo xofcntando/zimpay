@@ -1,0 +1,26 @@
+<%- include('_head') %>
+<h2>Admin</h2>
+<div class="notice <%= rec.ok ? '' : 'bad' %>">Ledger integrity: <b><%= rec.ok ? 'OK' : 'MISMATCH' %></b> (unbalanced tx: <%= rec.unbalanced %>, balance drift: <%= rec.drift %>, net: <%= rec.total %>)</div>
+
+<h3>ID verification queue (<%= kyc.length %>)</h3>
+<ul class="txs">
+<% kyc.forEach(u => { %><li><div class="admrow"><span><%= u.name %> <%= u.phone %><small><%= u.national_id %></small></span>
+  <form method="post" action="/admin/kyc/<%= u.id %>" class="inline"><input type="hidden" name="_csrf" value="<%= csrf %>">
+  <button class="btn sm" name="decision" value="approve">Approve</button> <button class="btn sm alt" name="decision" value="reject">Reject</button></form></div></li><% }) %>
+</ul>
+
+<h3>Pending withdrawals (<%= payouts.length %>)</h3>
+<ul class="txs">
+<% payouts.forEach(t => { %><li><div class="admrow"><span><%= fmt(t.amount,t.currency) %> to <%= t.msisdn %><small><%= t.name %> <%= t.phone %></small></span>
+  <form method="post" action="/admin/payout/<%= t.id %>" class="inline"><input type="hidden" name="_csrf" value="<%= csrf %>">
+  <input name="ref" placeholder="payout ref" class="sm"> <button class="btn sm" name="decision" value="approve">Paid</button> <button class="btn sm alt" name="decision" value="reject">Reject</button></form></div></li><% }) %>
+</ul>
+
+<h3>Books</h3>
+<table><tr><th>Account</th><th>Cur</th><th>Balance</th></tr>
+<% books.forEach(b => { %><tr><td><%= b.kind %></td><td><%= b.currency %></td><td><%= fmt(b.balance,b.currency) %></td></tr><% }) %></table>
+
+<h3>Recent transactions</h3>
+<table><tr><th>When</th><th>Type</th><th>User</th><th>Amount</th><th>Status</th></tr>
+<% recent.forEach(t => { %><tr><td><%= new Date(t.created_at).toLocaleString('en-ZW') %></td><td><%= t.type %></td><td><%= t.phone %></td><td><%= fmt(t.amount,t.currency) %></td><td><%= t.status %></td></tr><% }) %></table>
+<%- include('_foot') %>

@@ -1,0 +1,30 @@
+<%- include('_head') %>
+<section class="balances">
+  <div class="bal"><span>USD</span><strong><%= fmt(balances.USD,'USD') %></strong></div>
+  <div class="bal"><span>ZiG</span><strong><%= fmt(balances.ZWG,'ZWG') %></strong></div>
+</section>
+<section class="actions">
+  <a class="btn" href="/send">Send</a>
+  <a class="btn alt" href="/topup">Add money</a>
+  <a class="btn alt" href="/withdraw">Withdraw</a>
+</section>
+<% if (user.kyc_status !== 'verified') { %>
+<div class="notice">
+  ID status: <b><%= user.kyc_status === 'none' ? 'not verified' : user.kyc_status %></b>.
+  Withdrawals need verification and limits are low until then.
+  <% if (user.kyc_status === 'none' || user.kyc_status === 'rejected') { %><a href="/kyc">Verify your ID</a><% } %>
+</div>
+<% } %>
+<h3>Recent activity</h3>
+<ul class="txs">
+<% if (!txs.length) { %><li class="muted">Nothing yet.</li><% } %>
+<% txs.forEach(t => { const incoming = t.counterparty_id === user.id; const label =
+  t.type === 'transfer' ? (incoming ? 'From ' + t.init_name : 'To ' + t.cp_name) :
+  t.type === 'cashin' ? 'Added money' : 'Withdrawal'; const plus = incoming || t.type === 'cashin'; %>
+  <li><a href="/tx/<%= t.id %>">
+    <span><%= label %><small><%= new Date(t.created_at).toLocaleString('en-ZW') %> &middot; <%= t.status %></small></span>
+    <b class="<%= plus ? 'pos' : 'neg' %>"><%= plus ? '+' : '-' %><%= fmt(t.amount, t.currency) %></b>
+  </a></li>
+<% }) %>
+</ul>
+<%- include('_foot') %>

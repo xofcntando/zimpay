@@ -1,0 +1,10 @@
+<%- include('_head') %>
+<form class="card" method="post" action="/login">
+  <h2>Log in</h2>
+  <input type="hidden" name="_csrf" value="<%= csrf %>">
+  <label>Mobile number<input name="phone" inputmode="tel" placeholder="0771234567" required autocomplete="tel"></label>
+  <label>Password<input type="password" name="password" required autocomplete="current-password"></label>
+  <button class="btn">Log in</button>
+  <p class="muted">New here? <a href="/register">Create an account</a></p>
+</form>
+<%- include('_foot') %>

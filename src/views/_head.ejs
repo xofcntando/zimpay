@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title><%= cfg.appName %></title>
+<link rel="stylesheet" href="/style.css">
+</head><body>
+<% if (cfg.sandbox) { %><div class="sandbox">SANDBOX MODE - no real money moves. Cash-in/out are simulated.</div><% } %>
+<header class="bar">
+  <a class="brand" href="/"><span class="dot"></span><%= cfg.appName %></a>
+  <% if (user) { %>
+  <nav>
+    <a href="/dashboard">Wallet</a>
+    <% if (user.role === 'admin') { %><a href="/admin">Admin</a><% } %>
+    <form method="post" action="/logout" class="inline"><input type="hidden" name="_csrf" value="<%= csrf %>"><button class="link">Log out</button></form>
+  </nav>
+  <% } %>
+</header>
+<main>
+<% if (flash) { %><div class="flash <%= flash.type %>"><%= flash.text %></div><% } %>

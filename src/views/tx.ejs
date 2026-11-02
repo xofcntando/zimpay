@@ -1,0 +1,14 @@
+<%- include('_head') %>
+<div class="card">
+  <h2><%= tx.type === 'transfer' ? 'Transfer' : tx.type === 'cashin' ? 'Add money' : 'Withdrawal' %></h2>
+  <p class="big"><%= fmt(tx.amount, tx.currency) %></p>
+  <p>Status: <b class="st-<%= tx.status %>"><%= tx.status %></b></p>
+  <% if (tx.type === 'transfer') { %><p><%= tx.init_name %> (<%= tx.init_phone %>) to <%= tx.cp_name %> (<%= tx.cp_phone %>)</p><% } %>
+  <% if (tx.msisdn) { %><p>Mobile wallet: <%= tx.msisdn %></p><% } %>
+  <% if (Number(tx.fee)) { %><p>Fee: <%= fmt(tx.fee, tx.currency) %></p><% } %>
+  <% if (tx.note) { %><p>Note: <%= tx.note %></p><% } %>
+  <p class="muted">Ref <%= tx.id %><br><%= new Date(tx.created_at).toLocaleString('en-ZW') %></p>
+  <% if (tx.status === 'pending') { %><p class="muted">Reload this page to refresh the status.</p><% } %>
+  <a class="btn" href="/dashboard">Done</a>
+</div>
+<%- include('_foot') %>

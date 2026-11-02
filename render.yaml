@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: zimpay
+    runtime: node
+    plan: free            # use "starter" or higher for anything beyond a demo (free sleeps when idle)
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PAYMENT_PROVIDER
+        value: mock       # stays "mock" until you have a licensed partner (see README)
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: BASE_URL
+        sync: false       # e.g. https://zimpay.onrender.com
+      - key: ADMIN_PHONE
+        sync: false       # your mobile number; the account registered with it becomes admin
+      - key: DATABASE_URL
+        fromDatabase:
+          name: zimpay-db
+          property: connectionString
+
+databases:
+  - name: zimpay-db
+    plan: free            # Render free Postgres expires after 30 days; upgrade before storing anything you care about

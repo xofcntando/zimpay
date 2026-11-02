@@ -1,0 +1,9 @@
+<%- include('_head') %>
+<form class="card" method="post" action="/kyc">
+  <h2>Verify your ID</h2>
+  <input type="hidden" name="_csrf" value="<%= csrf %>">
+  <label>National ID number<input name="national_id" placeholder="63-123456-A-42" required></label>
+  <p class="muted">Status: <%= user.kyc_status %>. Document photo upload and automated checks are not built yet (see README).</p>
+  <button class="btn">Submit</button>
+</form>
+<%- include('_foot') %>

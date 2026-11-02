@@ -1,0 +1,14 @@
+<%- include('_head') %>
+<form class="card" method="post" action="/send">
+  <h2>Send money</h2>
+  <input type="hidden" name="_csrf" value="<%= csrf %>"><input type="hidden" name="key" value="<%= key %>">
+  <label>Recipient mobile number<input name="to" inputmode="tel" placeholder="0771234567" required></label>
+  <div class="row">
+    <label>Amount<input name="amount" inputmode="decimal" placeholder="10.00" required></label>
+    <label>Currency<select name="currency"><option>USD</option><option>ZWG</option></select></label>
+  </div>
+  <label>Note (optional)<input name="note" maxlength="140"></label>
+  <% if (cfg.feeBps.transfer) { %><p class="muted">Fee: <%= cfg.feeBps.transfer / 100 %>%</p><% } else { %><p class="muted">No fee for wallet-to-wallet transfers.</p><% } %>
+  <button class="btn">Send</button>
+</form>
+<%- include('_foot') %>
